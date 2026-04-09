@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: ./app
+    container_name: app
+    env_file:
+      - ./app/.env
+    volumes:
+      - ./app/src:/app/src
+    depends_on:
+      - database
+      - rabbitmq
+    networks:
+      - ml-service-network
+
+  web-proxy:
+    build:
+      context: ./web-proxy
+    container_name: web-proxy
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - ml-service-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: always
+    networks:
+      - ml-service-network
+
+  database:
+    image: postgres:16
+    container_name: database
+    environment:
+      POSTGRES_DB: ml_service_db
+      POSTGRES_USER: ml_user
+      POSTGRES_PASSWORD: ml_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ml-service-network
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
+
+networks:
+  ml-service-network:
+    driver: bridge
