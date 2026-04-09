@@ -54,6 +54,34 @@ class Asset:
         return self._symbol
 
 
+class Balance:
+    def __init__(self, amount: float = 0.0):
+        if amount < 0:
+            raise ValueError("Баланс не может быть отрицательным")
+        self._amount = amount
+
+    @property
+    def amount(self) -> float:
+        return self._amount
+
+    def can_afford(self, amount: float) -> bool:
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+        return self._amount >= amount
+
+    def deposit(self, amount: float) -> None:
+        if amount <= 0:
+            raise ValueError("Сумма пополнения должна быть положительной")
+        self._amount += amount
+
+    def withdraw(self, amount: float) -> None:
+        if amount <= 0:
+            raise ValueError("Сумма списания должна быть положительной")
+        if self._amount < amount:
+            raise ValueError("Недостаточно средств")
+        self._amount -= amount
+
+
 class User:
     def __init__(
         self,
@@ -62,17 +90,14 @@ class User:
         email: str,
         password_hash: str,
         role: UserRole = UserRole.USER,
-        balance: float = 0.0,
+        balance: Optional[Balance] = None,
     ):
-        if balance < 0:
-            raise ValueError("Баланс не может быть отрицательным")
-
         self._id = user_id
         self._username = username
         self._email = email
         self._password_hash = password_hash
         self._role = role
-        self._balance = balance
+        self._balance = balance or Balance()
 
     @property
     def id(self) -> int:
@@ -91,25 +116,8 @@ class User:
         return self._role
 
     @property
-    def balance(self) -> float:
+    def balance(self) -> Balance:
         return self._balance
-
-    def can_afford(self, amount: float) -> bool:
-        if amount <= 0:
-            raise ValueError("Сумма должна быть положительной")
-        return self._balance >= amount
-
-    def deposit(self, amount: float) -> None:
-        if amount <= 0:
-            raise ValueError("Сумма пополнения должна быть положительной")
-        self._balance += amount
-
-    def withdraw(self, amount: float) -> None:
-        if amount <= 0:
-            raise ValueError("Сумма списания должна быть положительной")
-        if self._balance < amount:
-            raise ValueError("Недостаточно средств")
-        self._balance -= amount
 
 
 class Admin(User):
@@ -119,7 +127,7 @@ class Admin(User):
         username: str,
         email: str,
         password_hash: str,
-        balance: float = 0.0,
+        balance: Optional[Balance] = None,
     ):
         super().__init__(
             user_id=user_id,
@@ -131,7 +139,7 @@ class Admin(User):
         )
 
     def approve_top_up(self, user: User, amount: float) -> None:
-        user.deposit(amount)
+        user.balance.deposit(amount)
 
 
 class PredictionResult:
@@ -269,7 +277,7 @@ class PredictionTask:
         if self._status != TaskStatus.WAITING:
             raise ValueError("Запустить можно только задачу в статусе WAITING")
 
-        if not self._user.can_afford(self._model.price_per_prediction):
+        if not self._user.balance.can_afford(self._model.price_per_prediction):
             raise ValueError("У пользователя недостаточно средств")
 
         self._status = TaskStatus.IN_PROGRESS
@@ -380,7 +388,7 @@ class CreditTransaction(Transaction):
         )
 
     def apply(self) -> None:
-        self._user.deposit(self._amount)
+        self._user.balance.deposit(self._amount)
 
 
 class DebitTransaction(Transaction):
@@ -402,7 +410,7 @@ class DebitTransaction(Transaction):
         )
 
     def apply(self) -> None:
-        self._user.withdraw(self._amount)
+        self._user.balance.withdraw(self._amount)
 
 
 class MLService:
@@ -420,13 +428,12 @@ class MLService:
         amount: float,
         transaction_id: int,
     ) -> CreditTransaction:
-        admin.approve_top_up(user, amount)
-
         transaction = CreditTransaction(
             transaction_id=transaction_id,
             user=user,
             amount=amount,
         )
+        transaction.apply()
         self._transactions.append(transaction)
         return transaction
 
