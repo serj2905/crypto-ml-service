@@ -8,6 +8,7 @@ from typing import Optional
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import ForeignKey
+from sqlalchemy import JSON
 from sqlalchemy import Numeric
 from sqlalchemy import String
 from sqlalchemy import func
@@ -66,13 +67,17 @@ class User(Base):
         default=UserRole.USER,
         nullable=False,
     )
-    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
 
+    balance_account: Mapped["Balance"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
@@ -81,6 +86,12 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def balance(self) -> Decimal:
+        if self.balance_account is None:
+            return Decimal("0.00")
+        return self.balance_account.amount
 
 
 class MLModel(Base):
@@ -99,6 +110,22 @@ class MLModel(Base):
     prediction_tasks: Mapped[list["PredictionTask"]] = relationship(back_populates="model")
 
 
+class Balance(Base):
+    __tablename__ = "balances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship(back_populates="balance_account")
+
+
 class PredictionTask(Base):
     __tablename__ = "prediction_tasks"
 
@@ -106,6 +133,7 @@ class PredictionTask(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     model_id: Mapped[int] = mapped_column(ForeignKey("ml_models.id"), nullable=False)
     asset_symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    input_payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     status: Mapped[TaskStatus] = mapped_column(SqlEnum(TaskStatus), nullable=False)
     direction: Mapped[Optional[Direction]] = mapped_column(SqlEnum(Direction))
     probability: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
