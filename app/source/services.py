@@ -5,16 +5,31 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from domain import Direction
-from domain import MLModel
-from domain import MarketRegime
-from domain import PredictionTask
-from domain import TaskStatus
-from domain import Transaction
-from domain import TransactionType
-from domain import User
-from domain import UserRole
-from domain import VolatilityLevel
+from .domain import Balance
+from .domain import Direction
+from .domain import MLModel
+from .domain import MarketRegime
+from .domain import PredictionTask
+from .domain import TaskStatus
+from .domain import Transaction
+from .domain import TransactionType
+from .domain import User
+from .domain import UserRole
+from .domain import VolatilityLevel
+
+
+def get_or_create_balance(session: Session, user: User) -> Balance:
+    if user.balance_account is None:
+        user.balance_account = Balance(amount=Decimal("0.00"))
+        session.add(user.balance_account)
+        session.flush()
+    return user.balance_account
+
+
+def get_user_balance_amount(user: User) -> Decimal:
+    if user.balance_account is None:
+        return Decimal("0.00")
+    return user.balance_account.amount.quantize(Decimal("0.01"))
 
 
 def create_user(
@@ -34,7 +49,7 @@ def create_user(
         email=email,
         password_hash=password_hash,
         role=role,
-        balance=balance,
+        balance_account=Balance(amount=balance),
     )
     session.add(user)
     session.commit()
@@ -48,6 +63,10 @@ def get_user(session: Session, user_id: int) -> User | None:
 
 def get_user_by_username(session: Session, username: str) -> User | None:
     return session.scalar(select(User).where(User.username == username))
+
+
+def get_user_by_email(session: Session, email: str) -> User | None:
+    return session.scalar(select(User).where(User.email == email))
 
 
 def list_models(session: Session) -> list[MLModel]:
@@ -64,7 +83,8 @@ def top_up_balance(session: Session, user_id: int, amount: float | str | Decimal
     if amount <= 0:
         raise ValueError("Сумма должна быть положительной")
 
-    user.balance += amount
+    balance = get_or_create_balance(session, user)
+    balance.amount += amount
     transaction = Transaction(
         user=user,
         transaction_type=TransactionType.CREDIT,
@@ -89,10 +109,11 @@ def debit_balance(
     amount = Decimal(str(amount)).quantize(Decimal("0.01"))
     if amount <= 0:
         raise ValueError("Сумма должна быть положительной")
-    if user.balance < amount:
+    balance = get_or_create_balance(session, user)
+    if balance.amount < amount:
         raise ValueError("Недостаточно средств")
 
-    user.balance -= amount
+    balance.amount -= amount
     transaction = Transaction(
         user=user,
         task=task,
@@ -110,6 +131,11 @@ def create_prediction_request(
     user_id: int,
     model_id: int,
     asset_symbol: str,
+    input_payload: dict[str, object],
+    direction: Direction = Direction.UP,
+    probability: Decimal = Decimal("0.7300"),
+    volatility_level: VolatilityLevel = VolatilityLevel.MEDIUM,
+    market_regime: MarketRegime = MarketRegime.TREND,
 ) -> PredictionTask:
     user = session.get(User, user_id)
     if user is None:
@@ -120,24 +146,26 @@ def create_prediction_request(
         raise ValueError("ML-модель не найдена")
 
     price = model.price_per_prediction.quantize(Decimal("0.01"))
-    if user.balance < price:
+    balance = get_or_create_balance(session, user)
+    if balance.amount < price:
         raise ValueError("Недостаточно средств")
 
     task = PredictionTask(
         user=user,
         model=model,
         asset_symbol=asset_symbol,
+        input_payload=input_payload,
         status=TaskStatus.SUCCESS,
-        direction=Direction.UP,
-        probability=Decimal("0.7300"),
-        volatility_level=VolatilityLevel.MEDIUM,
-        market_regime=MarketRegime.TREND,
+        direction=direction,
+        probability=probability,
+        volatility_level=volatility_level,
+        market_regime=market_regime,
         amount=price,
     )
     session.add(task)
     session.flush()
 
-    user.balance -= price
+    balance.amount -= price
     session.add(
         Transaction(
             user=user,
@@ -160,5 +188,17 @@ def get_prediction_history(session: Session, user_id: int) -> list[PredictionTas
         select(PredictionTask)
         .where(PredictionTask.user_id == user_id)
         .order_by(PredictionTask.created_at.desc(), PredictionTask.id.desc())
+    )
+    return list(session.scalars(query))
+
+
+def get_transaction_history(session: Session, user_id: int) -> list[Transaction]:
+    if session.get(User, user_id) is None:
+        raise ValueError("Пользователь не найден")
+
+    query = (
+        select(Transaction)
+        .where(Transaction.user_id == user_id)
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
     )
     return list(session.scalars(query))

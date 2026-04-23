@@ -5,12 +5,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from db import engine
-from domain import Base
-from domain import MLModel
-from domain import UserRole
-from services import create_user
-from services import get_user_by_username
+from .auth import hash_password
+from .db import engine
+from .domain import Base
+from .domain import MLModel
+from .domain import UserRole
+from .services import create_user
+from .services import get_user_by_username
 
 
 def init_db(session: Session) -> None:
@@ -25,7 +26,7 @@ def _create_demo_users(session: Session) -> None:
             session=session,
             username="demo_user",
             email="demo_user@example.com",
-            password_hash="demo_user_hash",
+            password_hash=hash_password("demo_user_password"),
             initial_balance=Decimal("100.00"),
         )
 
@@ -34,7 +35,7 @@ def _create_demo_users(session: Session) -> None:
             session=session,
             username="demo_admin",
             email="demo_admin@example.com",
-            password_hash="demo_admin_hash",
+            password_hash=hash_password("demo_admin_password"),
             role=UserRole.ADMIN,
             initial_balance=Decimal("1000.00"),
         )
