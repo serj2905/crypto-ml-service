@@ -12,6 +12,7 @@ if str(ROOT_DIR) not in sys.path:
 
 TEST_DB_PATH = ROOT_DIR / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+os.environ.pop("RABBITMQ_URL", None)
 
 from source.auth import token_store
 from source.domain import Base
@@ -71,6 +72,17 @@ def test_register_login_and_profile() -> None:
         assert profile.json()["email"] == "maria@example.com"
 
 
+def test_web_cabinet_is_served() -> None:
+    with TestClient(app) as client:
+        page = client.get("/")
+        script = client.get("/static/app.js")
+
+        assert page.status_code == 200
+        assert "Личный кабинет ML-сервиса" in page.text
+        assert script.status_code == 200
+        assert "refreshHistory" in script.text
+
+
 def test_top_up_balance_and_read_it() -> None:
     with TestClient(app) as client:
         created = register_user(client)
@@ -99,6 +111,11 @@ def test_prediction_debits_balance_and_writes_history() -> None:
         assert prediction.json()["credits_spent"] == "10.00"
         assert prediction.json()["balance"] == "40.00"
         assert prediction.json()["result"]["direction"] in {"UP", "DOWN"}
+        assert prediction.json()["worker_id"] == "api-inline"
+
+        status_response = client.get(f"/predict/{prediction.json()['task_id']}", headers=headers)
+        assert status_response.status_code == 200
+        assert status_response.json()["status"] == "success"
 
         prediction_history = client.get("/history/predictions", headers=headers)
         assert prediction_history.status_code == 200

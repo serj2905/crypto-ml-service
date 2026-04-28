@@ -140,6 +140,8 @@ class PredictionTask(Base):
     volatility_level: Mapped[Optional[VolatilityLevel]] = mapped_column(SqlEnum(VolatilityLevel))
     market_regime: Mapped[Optional[MarketRegime]] = mapped_column(SqlEnum(MarketRegime))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    worker_id: Mapped[Optional[str]] = mapped_column(String(50))
+    error_message: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
