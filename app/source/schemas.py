@@ -114,7 +114,9 @@ class PredictionResponse(BaseModel):
     credits_spent: Decimal
     balance: Decimal
     status: str
-    result: PredictionResult
+    worker_id: str | None = None
+    error_message: str | None = None
+    result: PredictionResult | None = None
     created_at: datetime
 
 
@@ -126,5 +128,7 @@ class PredictionHistoryItem(BaseModel):
     timeframe: str
     status: str
     credits_spent: Decimal
+    worker_id: str | None = None
+    error_message: str | None = None
     created_at: datetime
     result: PredictionResult | None

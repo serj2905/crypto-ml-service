@@ -132,10 +132,6 @@ def create_prediction_request(
     model_id: int,
     asset_symbol: str,
     input_payload: dict[str, object],
-    direction: Direction = Direction.UP,
-    probability: Decimal = Decimal("0.7300"),
-    volatility_level: VolatilityLevel = VolatilityLevel.MEDIUM,
-    market_regime: MarketRegime = MarketRegime.TREND,
 ) -> PredictionTask:
     user = session.get(User, user_id)
     if user is None:
@@ -155,16 +151,51 @@ def create_prediction_request(
         model=model,
         asset_symbol=asset_symbol,
         input_payload=input_payload,
-        status=TaskStatus.SUCCESS,
-        direction=direction,
-        probability=probability,
-        volatility_level=volatility_level,
-        market_regime=market_regime,
+        status=TaskStatus.WAITING,
         amount=price,
     )
     session.add(task)
-    session.flush()
+    session.commit()
+    session.refresh(task)
+    return task
 
+
+def complete_prediction_task(
+    session: Session,
+    task_id: int,
+    worker_id: str,
+    direction: Direction,
+    probability: Decimal,
+    volatility_level: VolatilityLevel,
+    market_regime: MarketRegime,
+) -> PredictionTask:
+    task = session.get(PredictionTask, task_id)
+    if task is None:
+        raise ValueError("ML-задача не найдена")
+    if task.status != TaskStatus.WAITING:
+        return task
+
+    user = session.get(User, task.user_id)
+    if user is None:
+        raise ValueError("Пользователь не найден")
+
+    balance = get_or_create_balance(session, user)
+    price = task.amount.quantize(Decimal("0.01"))
+    if balance.amount < price:
+        task.status = TaskStatus.FAILED
+        task.worker_id = worker_id
+        task.error_message = "Недостаточно средств"
+        session.commit()
+        session.refresh(task)
+        return task
+
+    task.status = TaskStatus.SUCCESS
+    task.worker_id = worker_id
+    task.direction = direction
+    task.probability = probability
+    task.volatility_level = volatility_level
+    task.market_regime = market_regime
+    task.error_message = None
     balance.amount -= price
     session.add(
         Transaction(
@@ -174,10 +205,31 @@ def create_prediction_request(
             amount=price,
         )
     )
-
     session.commit()
     session.refresh(task)
     return task
+
+
+def fail_prediction_task(session: Session, task_id: int, worker_id: str, message: str) -> PredictionTask:
+    task = session.get(PredictionTask, task_id)
+    if task is None:
+        raise ValueError("ML-задача не найдена")
+    if task.status == TaskStatus.WAITING:
+        task.status = TaskStatus.FAILED
+        task.worker_id = worker_id
+        task.error_message = message[:255]
+        session.commit()
+        session.refresh(task)
+    return task
+
+
+def get_prediction_task(session: Session, user_id: int, task_id: int) -> PredictionTask | None:
+    return session.scalar(
+        select(PredictionTask).where(
+            PredictionTask.id == task_id,
+            PredictionTask.user_id == user_id,
+        )
+    )
 
 
 def get_prediction_history(session: Session, user_id: int) -> list[PredictionTask]:

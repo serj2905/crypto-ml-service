@@ -3,13 +3,16 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from collections.abc import Generator
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import Header
 from fastapi import status
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .auth import build_prediction_result
@@ -36,9 +39,13 @@ from .schemas import PredictionResult
 from .schemas import RegisterRequest
 from .schemas import TransactionResponse
 from .schemas import UserResponse
+from .rabbitmq import is_queue_enabled
+from .rabbitmq import publish_prediction_task
+from .services import complete_prediction_task
 from .services import create_prediction_request
 from .services import create_user
 from .services import get_prediction_history
+from .services import get_prediction_task
 from .services import get_transaction_history
 from .services import get_user
 from .services import get_user_balance_amount
@@ -46,6 +53,9 @@ from .services import get_user_by_email
 from .services import get_user_by_username
 from .services import list_models
 from .services import top_up_balance
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class AppError(Exception):
@@ -84,6 +94,30 @@ def require_current_user(
     return user
 
 
+def build_prediction_response(task, balance: Decimal) -> PredictionResponse:
+    result = None
+    if task.direction and task.probability and task.volatility_level and task.market_regime:
+        result = PredictionResult(
+            direction=task.direction.value,
+            probability=task.probability,
+            volatility_level=task.volatility_level.value,
+            market_regime=task.market_regime.value,
+        )
+
+    return PredictionResponse(
+        task_id=task.id,
+        model_id=task.model_id,
+        asset_symbol=task.asset_symbol,
+        credits_spent=task.amount,
+        balance=balance,
+        status=task.status.value,
+        worker_id=task.worker_id,
+        error_message=task.error_message,
+        result=result,
+        created_at=task.created_at,
+    )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -104,6 +138,7 @@ def create_app() -> FastAPI:
             422: {"model": ErrorResponse},
         },
     )
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(AppError)
     async def app_error_handler(_, exc: AppError) -> JSONResponse:
@@ -134,6 +169,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/", response_class=FileResponse)
+    def web_app() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
 
     @app.post("/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
     def register(
@@ -198,7 +237,6 @@ def create_app() -> FastAPI:
         current_user=Depends(require_current_user),
         session: Session = Depends(get_db_session),
     ) -> PredictionResponse:
-        result = build_prediction_result(payload.model_dump(mode="json"))
         try:
             task = create_prediction_request(
                 session=session,
@@ -206,10 +244,6 @@ def create_app() -> FastAPI:
                 model_id=payload.model_id,
                 asset_symbol=payload.asset_symbol,
                 input_payload=payload.model_dump(mode="json"),
-                direction=Direction(result["direction"]),
-                probability=Decimal(str(result["probability"])),
-                volatility_level=VolatilityLevel(result["volatility_level"]),
-                market_regime=MarketRegime(result["market_regime"]),
             )
         except ValueError as exc:
             message = str(exc)
@@ -217,22 +251,40 @@ def create_app() -> FastAPI:
                 raise AppError(status.HTTP_402_PAYMENT_REQUIRED, "insufficient_balance", message) from exc
             raise AppError(status.HTTP_400_BAD_REQUEST, "prediction_error", message) from exc
 
+        if is_queue_enabled():
+            try:
+                publish_prediction_task(task.id)
+            except Exception as exc:
+                raise AppError(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    "queue_unavailable",
+                    "RabbitMQ is unavailable",
+                ) from exc
+        else:
+            result = build_prediction_result(payload.model_dump(mode="json"))
+            task = complete_prediction_task(
+                session=session,
+                task_id=task.id,
+                worker_id="api-inline",
+                direction=Direction(result["direction"]),
+                probability=Decimal(str(result["probability"])),
+                volatility_level=VolatilityLevel(result["volatility_level"]),
+                market_regime=MarketRegime(result["market_regime"]),
+            )
+
         session.refresh(current_user)
-        return PredictionResponse(
-            task_id=task.id,
-            model_id=task.model_id,
-            asset_symbol=task.asset_symbol,
-            credits_spent=task.amount,
-            balance=get_user_balance_amount(current_user),
-            status=task.status.value,
-            result=PredictionResult(
-                direction=task.direction.value,
-                probability=task.probability,
-                volatility_level=task.volatility_level.value,
-                market_regime=task.market_regime.value,
-            ),
-            created_at=task.created_at,
-        )
+        return build_prediction_response(task, get_user_balance_amount(current_user))
+
+    @app.get("/predict/{task_id}", response_model=PredictionResponse)
+    def prediction_status(
+        task_id: int,
+        current_user=Depends(require_current_user),
+        session: Session = Depends(get_db_session),
+    ) -> PredictionResponse:
+        task = get_prediction_task(session, current_user.id, task_id)
+        if task is None:
+            raise AppError(status.HTTP_404_NOT_FOUND, "task_not_found", "Prediction task was not found")
+        return build_prediction_response(task, get_user_balance_amount(current_user))
 
     @app.get("/history/predictions", response_model=list[PredictionHistoryItem])
     def prediction_history(
@@ -249,6 +301,8 @@ def create_app() -> FastAPI:
                 timeframe=str(task.input_payload.get("timeframe", "")),
                 status=task.status.value,
                 credits_spent=task.amount,
+                worker_id=task.worker_id,
+                error_message=task.error_message,
                 created_at=task.created_at,
                 result=PredictionResult(
                     direction=task.direction.value,

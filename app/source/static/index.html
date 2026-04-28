@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crypto ML Service</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section class="auth-screen" id="auth-screen">
+        <div class="auth-copy">
+          <p class="eyebrow">Crypto ML Service</p>
+          <h1>Личный кабинет ML-сервиса</h1>
+          <p>
+            Авторизуйтесь, чтобы пополнить баланс, отправлять ML-запросы через backend API
+            и видеть историю предсказаний.
+          </p>
+        </div>
+
+        <div class="auth-panel">
+          <form id="login-form" class="form">
+            <h2>Вход</h2>
+            <label>Имя пользователя <input name="username" minlength="3" autocomplete="username" required /></label>
+            <label>Пароль <input name="password" type="password" minlength="6" autocomplete="current-password" required /></label>
+            <button type="submit">Войти</button>
+          </form>
+
+          <div class="register-entry">
+            <span>Нет аккаунта?</span>
+            <button class="ghost-button" id="show-register" type="button">Регистрация</button>
+          </div>
+
+          <form id="register-form" class="form register-form" hidden>
+            <h2>Регистрация</h2>
+            <label>Имя пользователя <input name="username" minlength="3" autocomplete="username" required /></label>
+            <label>Email <input name="email" type="email" autocomplete="email" required /></label>
+            <label>Пароль <input name="password" type="password" minlength="6" autocomplete="new-password" required /></label>
+            <button type="submit">Создать аккаунт</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="app-screen" id="app-screen" hidden>
+        <header class="dashboard-header">
+          <div>
+            <p class="eyebrow">RabbitMQ · REST API · ML Worker</p>
+            <h1>Кабинет прогнозов</h1>
+          </div>
+          <button class="ghost-button on-dark" id="logout-button" type="button">Выйти</button>
+        </header>
+
+        <section class="summary-grid">
+          <div class="summary-item">
+            <span>Пользователь</span>
+            <strong id="user-name">-</strong>
+          </div>
+          <div class="summary-item">
+            <span>Баланс</span>
+            <strong><span id="balance-value">0.00</span> кредитов</strong>
+          </div>
+          <form id="top-up-form" class="top-up-form">
+            <label>Пополнение <input name="amount" type="number" min="1" step="0.01" value="50.00" required /></label>
+            <button type="submit">Пополнить</button>
+          </form>
+        </section>
+
+        <section class="forecast-section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">ML-запросы</p>
+              <h2>Прогнозные окна</h2>
+            </div>
+            <p class="section-note">Прогноз направления через Trend Analyzer</p>
+          </div>
+
+          <div class="forecast-grid" id="forecast-grid">
+            <article class="forecast-card" data-symbol="BTCUSDT">
+              <div class="coin-head">
+                <span class="coin-icon btc">BTC</span>
+                <div>
+                  <h3>Bitcoin</h3>
+                  <p>BTCUSDT · 1h</p>
+                </div>
+              </div>
+              <dl>
+                <div><dt>Open</dt><dd>100.00</dd></div>
+                <div><dt>High</dt><dd>110.00</dd></div>
+                <div><dt>Low</dt><dd>95.00</dd></div>
+                <div><dt>Close</dt><dd>108.00</dd></div>
+              </dl>
+              <div class="model-actions">
+                <div class="model-box" data-model="trend-analyzer">
+                  <button class="predict-button" type="button">Trend Analyzer</button>
+                  <div class="card-result">Ожидает запуска</div>
+                </div>
+              </div>
+            </article>
+
+            <article class="forecast-card" data-symbol="ETHUSDT">
+              <div class="coin-head">
+                <span class="coin-icon eth">ETH</span>
+                <div>
+                  <h3>Ethereum</h3>
+                  <p>ETHUSDT · 1h</p>
+                </div>
+              </div>
+              <dl>
+                <div><dt>Open</dt><dd>2400.00</dd></div>
+                <div><dt>High</dt><dd>2480.00</dd></div>
+                <div><dt>Low</dt><dd>2350.00</dd></div>
+                <div><dt>Close</dt><dd>2428.00</dd></div>
+              </dl>
+              <div class="model-actions">
+                <div class="model-box" data-model="trend-analyzer">
+                  <button class="predict-button" type="button">Trend Analyzer</button>
+                  <div class="card-result">Ожидает запуска</div>
+                </div>
+              </div>
+            </article>
+
+            <article class="forecast-card" data-symbol="SOLUSDT">
+              <div class="coin-head">
+                <span class="coin-icon sol">SOL</span>
+                <div>
+                  <h3>Solana</h3>
+                  <p>SOLUSDT · 1h</p>
+                </div>
+              </div>
+              <dl>
+                <div><dt>Open</dt><dd>138.00</dd></div>
+                <div><dt>High</dt><dd>144.00</dd></div>
+                <div><dt>Low</dt><dd>132.00</dd></div>
+                <div><dt>Close</dt><dd>134.50</dd></div>
+              </dl>
+              <div class="model-actions">
+                <div class="model-box" data-model="trend-analyzer">
+                  <button class="predict-button" type="button">Trend Analyzer</button>
+                  <div class="card-result">Ожидает запуска</div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="history-section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">История операций</p>
+              <h2>Предсказания и списания</h2>
+            </div>
+            <button id="refresh-history" type="button">Обновить</button>
+          </div>
+
+          <div class="history-grid">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Актив</th>
+                    <th>Статус</th>
+                    <th>Воркер</th>
+                    <th>Результат</th>
+                  </tr>
+                </thead>
+                <tbody id="prediction-history"></tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Тип</th>
+                    <th>Сумма</th>
+                    <th>Задача</th>
+                  </tr>
+                </thead>
+                <tbody id="transaction-history"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
