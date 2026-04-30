@@ -100,20 +100,20 @@ label {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: clamp(32px, 7vw, 88px);
+  padding: clamp(44px, 7vw, 96px) clamp(32px, 7vw, 88px) clamp(44px, 7vw, 96px) clamp(112px, 14vw, 196px);
 }
 
 .auth-copy h1 {
-  font-size: clamp(40px, 7vw, 78px);
+  font-size: clamp(60px, 9vw, 118px);
   line-height: 0.98;
   margin: 0;
-  max-width: 760px;
+  max-width: 980px;
 }
 
 .auth-copy p {
-  font-size: 18px;
+  font-size: 27px;
   line-height: 1.65;
-  max-width: 640px;
+  max-width: 820px;
 }
 
 .auth-panel {
@@ -160,8 +160,54 @@ label {
 }
 
 .register-form {
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(16, 34, 42, 0.28);
+  left: 50%;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 26px;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  z-index: 20;
+}
+
+.register-modal-open::before {
+  background: rgba(16, 34, 42, 0.56);
+  content: "";
+  inset: 0;
+  position: fixed;
+  z-index: 19;
+}
+
+.register-modal-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.register-modal-head h2 {
+  margin: 0;
+}
+
+.close-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--brand-dark);
+  display: inline-flex;
+  font-size: 24px;
+  height: 38px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0;
+  width: 38px;
+}
+
+.close-button:hover {
+  background: rgba(11, 118, 110, 0.08);
 }
 
 .app-screen {
@@ -445,6 +491,7 @@ th {
 
   .auth-copy {
     min-height: 42vh;
+    padding: 32px 24px;
   }
 
   .dashboard-header,

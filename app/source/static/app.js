@@ -13,6 +13,10 @@ const state = {
 const authScreen = document.querySelector("#auth-screen");
 const appScreen = document.querySelector("#app-screen");
 const toast = document.querySelector("#toast");
+const loginForm = document.querySelector("#login-form");
+const registerForm = document.querySelector("#register-form");
+const loginUsernameInput = loginForm.querySelector('input[name="username"]');
+const loginPasswordInput = loginForm.querySelector('input[name="password"]');
 
 function showToast(message) {
   toast.textContent = message;
@@ -58,6 +62,7 @@ function statusBadge(status) {
 }
 
 function showDashboard() {
+  closeRegisterModal();
   authScreen.hidden = true;
   appScreen.hidden = false;
 }
@@ -67,15 +72,45 @@ function showAuth() {
   authScreen.hidden = false;
 }
 
+function openRegisterModal() {
+  registerForm.hidden = false;
+  document.body.classList.add("register-modal-open");
+  registerForm.querySelector("input")?.focus();
+}
+
+function closeRegisterModal() {
+  registerForm.hidden = true;
+  document.body.classList.remove("register-modal-open");
+}
+
+function prepareRegisterModal() {
+  const title = registerForm.querySelector("h2");
+  if (!title) return;
+
+  const header = document.createElement("div");
+  header.className = "register-modal-head";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "close-button";
+  closeButton.type = "button";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "x";
+  closeButton.addEventListener("click", closeRegisterModal);
+
+  title.replaceWith(header);
+  header.append(title, closeButton);
+}
+
 function modelLabel(modelName) {
-  if (modelName === "trend-analyzer") return "Trend Analyzer";
+  if (modelName === "trend-analyzer") return "Анализ";
   return modelName;
 }
 
 function renderCardResult(modelBox, task) {
   const target = modelBox.querySelector(".card-result");
+  target.hidden = false;
   if (task.status === "waiting") {
-    target.innerHTML = `${statusBadge(task.status)}<span>Задача #${task.task_id} отправлена в RabbitMQ</span>`;
+    target.innerHTML = `${statusBadge(task.status)}<span>Прогноз на неделю. Задача #${task.task_id} отправлена в RabbitMQ</span>`;
     return;
   }
 
@@ -89,6 +124,7 @@ function renderCardResult(modelBox, task) {
     <dl class="result-metrics">
       <div><dt>Направление</dt><dd>${task.result.direction}</dd></div>
       <div><dt>Вероятность</dt><dd>${task.result.probability}</dd></div>
+      <div><dt>Период</dt><dd>Неделя</dd></div>
       <div><dt>Режим рынка</dt><dd>${task.result.market_regime}</dd></div>
       <div><dt>Воркер</dt><dd>${task.worker_id || "-"}</dd></div>
     </dl>
@@ -175,29 +211,51 @@ function startPolling(modelBox, taskId) {
   state.pollTimers.set(taskId, timer);
 }
 
+prepareRegisterModal();
+
 document.querySelector("#show-register").addEventListener("click", () => {
-  const form = document.querySelector("#register-form");
-  form.hidden = !form.hidden;
+  openRegisterModal();
 });
 
-document.querySelector("#register-form").addEventListener("submit", async (event) => {
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !registerForm.hidden) {
+    closeRegisterModal();
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (
+    registerForm.hidden ||
+    !(target instanceof Element) ||
+    registerForm.contains(target) ||
+    target.closest("#show-register")
+  ) {
+    return;
+  }
+  closeRegisterModal();
+});
+
+registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   try {
-    const data = await api("/auth/register", {
+    const credentials = formData(form);
+    await api("/auth/register", {
       method: "POST",
-      body: JSON.stringify(formData(event.currentTarget)),
+      body: JSON.stringify(credentials),
     });
-    state.token = data.token;
-    localStorage.setItem("ml_token", state.token);
-    await refreshProfile();
-    await refreshHistory();
+    loginUsernameInput.value = credentials.username;
+    form.reset();
+    closeRegisterModal();
+    loginPasswordInput.focus();
     showToast("Аккаунт создан");
   } catch (error) {
     showToast(error.message);
   }
 });
 
-document.querySelector("#login-form").addEventListener("submit", async (event) => {
+loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const data = await api("/auth/login", {
@@ -253,12 +311,14 @@ document.querySelector("#forecast-grid").addEventListener("click", async (event)
   const payload = {
     model_id: model.id,
     asset_symbol: symbol,
-    timeframe: "1h",
+    timeframe: "1w",
     ...marketPresets[symbol],
   };
 
   button.disabled = true;
-  modelBox.querySelector(".card-result").textContent = "Отправка задачи...";
+  const cardResult = modelBox.querySelector(".card-result");
+  cardResult.hidden = false;
+  cardResult.textContent = "Отправка задачи. Прогноз на неделю...";
   try {
     const task = await api("/predict", {
       method: "POST",
@@ -269,7 +329,7 @@ document.querySelector("#forecast-grid").addEventListener("click", async (event)
     await refreshHistory();
     if (task.status === "waiting") startPolling(modelBox, task.task_id);
   } catch (error) {
-    modelBox.querySelector(".card-result").textContent = "Запрос отклонён";
+    cardResult.textContent = "Запрос отклонён";
     showToast(error.message);
   } finally {
     button.disabled = false;
